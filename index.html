@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thống kê học sinh</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 800px;
+            text-align: center;
+        }
+        select, button {
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid #cbd5e1;
+            font-size: 16px;
+            margin-top: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+        select:focus, button:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+        }
+        button {
+            background-color: #3b82f6;
+            color: white;
+            font-weight: 600;
+        }
+        button:hover {
+            background-color: #2563eb;
+            transform: translateY(-1px);
+        }
+        .result-container {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #e2e8f0;
+            border-radius: 8px;
+            text-align: left;
+            min-height: 100px;
+            overflow-x: auto; /* For scrollable tables */
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th, td {
+            border: 1px solid #cbd5e1;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #cbd5e1;
+            font-weight: 600;
+        }
+        /* Canvas should fill its parent container, which will have a defined height */
+        canvas {
+            max-width: 100%;
+            width: 100%; /* Ensure canvas takes full width of its parent */
+            height: 100%; /* Ensure canvas takes full height of its parent */
+        }
+        /* Container for charts to control their height */
+        .chart-container {
+            position: relative; /* Needed for canvas to fill parent */
+            margin-top: 20px;
+            margin-bottom: 30px; /* Add some space between charts */
+            /* Add overflow-x to allow horizontal scrolling for wide charts */
+            overflow-x: auto;
+        }
+        /* Inner div to ensure chart has enough width for many bars */
+        .chart-inner-wrapper {
+            width: fit-content; /* Allow content to dictate width */
+            min-width: 100%; /* Ensure it's at least 100% of parent */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">Thống kê dữ liệu học sinh</h1>
+
+        <div class="mb-6">
+            <label for="statisticSelect" class="block text-gray-700 text-lg font-medium mb-2">Chọn loại thống kê:</label>
+            <select id="statisticSelect" class="w-full max-w-xs mx-auto">
+                <option value="">-- Chọn thống kê --</option>
+                <option value="totalStudents">Tổng số học sinh</option>
+                <option value="genderDistributionChart">Phân bổ giới tính (Biểu đồ quạt)</option>
+                <option value="averageScoresBySubject">Điểm trung bình theo môn</option>
+                <option value="topStudentsByTotalScoreTHPT">Top học sinh theo tổng điểm xét THPT</option>
+                <option value="studentsBySchool">Học sinh theo trường (Bảng)</option>
+                <option value="scoreDistributionBySubject">Phân bổ điểm theo môn (Biểu đồ cột)</option>
+                <option value="averageScoresByAge">Điểm trung bình theo độ tuổi</option>
+                <option value="specializedSubjectStatistics">Thống kê môn chuyên</option>
+            </select>
+            <button onclick="displayStatistic()" class="ml-4 px-6 py-2 rounded-lg">Hiển thị thống kê</button>
+        </div>
+
+        <div id="result" class="result-container">
+            <p class="text-gray-600">Chọn một thống kê từ danh sách thả xuống để xem kết quả.</p>
+        </div>
+    </div>
+
+    <script>
+        let studentData = []; // Khai báo biến toàn cục để lưu trữ dữ liệu học sinh
+        let chartInstances = []; // Biến để lưu trữ thể hiện biểu đồ Chart.js (có thể có nhiều)
+
+        // Hàm tải dữ liệu từ tệp JSON
+        async function loadStudentData() {
+            try {
+                const response = await fetch('data.json'); // Lấy dữ liệu từ file data.json
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                studentData = await response.json();
+                console.log("Dữ liệu học sinh đã được tải:", studentData);
+            } catch (error) {
+                console.error("Lỗi khi tải dữ liệu học sinh:", error);
+                document.getElementById('result').innerHTML = `<p class="text-red-500">Lỗi khi tải dữ liệu: ${error.message}. Vui lòng đảm bảo tệp 'data.json' có sẵn và đúng định dạng.</p>`;
+            }
+        }
+
+        // Gọi hàm tải dữ liệu khi trang được tải
+        window.onload = loadStudentData;
+
+        function displayStatistic() {
+            const selectElement = document.getElementById('statisticSelect');
+            const selectedStatistic = selectElement.value;
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = ''; // Xóa kết quả cũ
+
+            // Hủy tất cả các biểu đồ Chart.js hiện có
+            chartInstances.forEach(instance => instance.destroy());
+            chartInstances = []; // Đặt lại mảng các thể hiện biểu đồ
+
+            if (studentData.length === 0) {
+                resultDiv.innerHTML = `<p class="text-red-500">Không có dữ liệu học sinh để hiển thị. Vui lòng tải lại trang hoặc kiểm tra tệp 'data.json'.</p>`;
+                return;
+            }
+
+            switch (selectedStatistic) {
+                case 'totalStudents':
+                    displayTotalStudents();
+                    break;
+                case 'genderDistributionChart':
+                    displayGenderDistributionChart();
+                    break;
+                case 'averageScoresBySubject':
+                    displayAverageScoresBySubject();
+                    break;
+                case 'topStudentsByTotalScoreTHPT':
+                    displayTopStudentsByTotalScoreTHPT();
+                    break;
+                case 'studentsBySchool':
+                    displayStudentsBySchool();
+                    break;
+                case 'scoreDistributionBySubject':
+                    displayScoreDistributionBySubject();
+                    break;
+                case 'averageScoresByAge':
+                    displayAverageScoresByAge();
+                    break;
+                case 'specializedSubjectStatistics':
+                    displaySpecializedSubjectStatistics();
+                    break;
+                default:
+                    resultDiv.innerHTML = '<p class="text-gray-600">Chọn một thống kê từ danh sách thả xuống để xem kết quả.</p>';
+            }
+        }
+
+        function displayTotalStudents() {
+            const total = studentData.length;
+            document.getElementById('result').innerHTML = `<p class="text-gray-800">Tổng số học sinh: <span class="font-bold">${total}</span></p>`;
+        }
+
+        function displayGenderDistributionChart() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `
+                <h3 class="text-xl font-semibold text-gray-700 mb-2">Phân bổ giới tính (Biểu đồ quạt):</h3>
+                <div class="chart-container" style="height: 300px;">
+                    <canvas id="genderChart"></canvas>
+                </div>
+            `;
+
+            let male = 0;
+            let female = 0;
+            studentData.forEach(student => {
+                if (student.nu === "true") {
+                    female++;
+                } else if (student.nu === "false") {
+                    male++;
+                }
+            });
+
+            const ctx = document.getElementById('genderChart').getContext('2d');
+            const newChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: ['Nam', 'Nữ'],
+                    datasets: [{
+                        data: [male, female],
+                        backgroundColor: ['rgba(54, 162, 235, 0.7)', 'rgba(255, 99, 132, 0.7)'],
+                        borderColor: ['rgba(54, 162, 235, 1)', 'rgba(255, 99, 132, 1)'],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Phân bổ giới tính học sinh'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.raw;
+                                    const total = context.dataset.data.reduce((acc, current) => acc + current, 0);
+                                    const percentage = ((value / total) * 100).toFixed(2);
+                                    return `${label}: ${value} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            chartInstances.push(newChart);
+        }
+
+        function displayAverageScoresBySubject() {
+            let totalVan = 0;
+            let totalToan = 0;
+            let totalAnh = 0;
+            let count = 0;
+
+            studentData.forEach(student => {
+                const van = parseFloat(student.van);
+                const toan = parseFloat(student.toan);
+                const anh = parseFloat(student.anh);
+
+                if (!isNaN(van)) totalVan += van;
+                if (!isNaN(toan)) totalToan += toan;
+                if (!isNaN(anh)) totalAnh += anh;
+
+                if (!isNaN(van) || !isNaN(toan) || !isNaN(anh)) {
+                    count++;
+                }
+            });
+
+            const avgVan = count > 0 ? (totalVan / count).toFixed(2) : 'N/A';
+            const avgToan = count > 0 ? (totalToan / count).toFixed(2) : 'N/A';
+            const avgAnh = count > 0 ? (totalAnh / count).toFixed(2) : 'N/A';
+
+            document.getElementById('result').innerHTML = `
+                <h3 class="text-xl font-semibold text-gray-700 mb-2">Điểm trung bình theo môn:</h3>
+                <p class="text-gray-800">Văn: <span class="font-bold">${avgVan}</span></p>
+                <p class="text-gray-800">Toán: <span class="font-bold">${avgToan}</span></p>
+                <p class="text-gray-800">Anh: <span class="font-bold">${avgAnh}</span></p>
+            `;
+        }
+
+        function displayTopStudentsByTotalScoreTHPT() {
+            const sortedStudents = studentData
+                .filter(student => !isNaN(parseFloat(student.tongdiemxetthpt)) && parseFloat(student.tongdiemxetthpt) > 0)
+                .sort((a, b) => parseFloat(b.tongdiemxetthpt) - parseFloat(a.tongdiemxetthpt));
+
+            const top5 = sortedStudents.slice(0, 5);
+
+            let tableHtml = `<h3 class="text-xl font-semibold text-gray-700 mb-2">Top 5 học sinh theo tổng điểm xét THPT:</h3>`;
+            if (top5.length > 0) {
+                tableHtml += `
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr>
+                                <th class="py-2 px-4 bg-blue-100 rounded-tl-lg">SBD</th>
+                                <th class="py-2 px-4 bg-blue-100">Tên</th>
+                                <th class="py-2 px-4 bg-blue-100">Trường</th>
+                                <th class="py-2 px-4 bg-blue-100 rounded-tr-lg">Tổng điểm THPT</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                top5.forEach(student => {
+                    tableHtml += `
+                        <tr>
+                            <td class="py-2 px-4">${student.SBD}</td>
+                            <td class="py-2 px-4">${student.ten}</td>
+                            <td class="py-2 px-4">${student.truong}</td>
+                            <td class="py-2 px-4 font-bold">${parseFloat(student.tongdiemxetthpt).toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+                tableHtml += `
+                        </tbody>
+                    </table>
+                `;
+            } else {
+                tableHtml += `<p class="text-gray-600">Không có dữ liệu hợp lệ để hiển thị top học sinh.</p>`;
+            }
+            document.getElementById('result').innerHTML = tableHtml;
+        }
+
+        function displayStudentsBySchool() {
+            const schools = {};
+            studentData.forEach(student => {
+                const schoolName = student.truong || "Không xác định";
+                if (!schools[schoolName]) {
+                    schools[schoolName] = 0;
+                }
+                schools[schoolName]++;
+            });
+
+            let tableHtml = `<h3 class="text-xl font-semibold text-gray-700 mb-2">Số lượng học sinh theo trường:</h3>`;
+            if (Object.keys(schools).length > 0) {
+                tableHtml += `
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr>
+                                <th class="py-2 px-4 bg-blue-100 rounded-tl-lg">Trường</th>
+                                <th class="py-2 px-4 bg-blue-100 rounded-tr-lg">Số lượng học sinh</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                for (const school in schools) {
+                    tableHtml += `
+                        <tr>
+                            <td class="py-2 px-4">${school}</td>
+                            <td class="py-2 px-4 font-bold">${schools[school]}</td>
+                        </tr>
+                    `;
+                }
+                tableHtml += `
+                        </tbody>
+                    </table>
+                `;
+            } else {
+                tableHtml += `<p class="text-gray-600">Không có dữ liệu trường học để hiển thị.</p>`;
+            }
+            document.getElementById('result').innerHTML = tableHtml;
+        }
+
+        function displayScoreDistributionBySubject() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `<h3 class="text-xl font-semibold text-gray-700 mb-2">Phân bổ điểm theo môn:</h3>`;
+
+            const vanScores = [];
+            const toanScores = [];
+            const anhScores = [];
+
+            studentData.forEach(student => {
+                const van = parseFloat(student.van);
+                const toan = parseFloat(student.toan);
+                const anh = parseFloat(student.anh);
+
+                if (!isNaN(van)) vanScores.push(van);
+                if (!isNaN(toan)) toanScores.push(toan);
+                if (!isNaN(anh)) anhScores.push(anh);
+            });
+
+            // Tạo các khoảng điểm với bước nhảy 0.25
+            const bins = [];
+            for (let i = 0; i < 10; i += 0.25) {
+                bins.push(`${i.toFixed(2)}-${(i + 0.25).toFixed(2)}`);
+            }
+            // Đảm bảo khoảng cuối cùng kết thúc ở 10.00
+            if (bins.length > 0 && parseFloat(bins[bins.length - 1].split('-')[1]) < 10) {
+                bins[bins.length - 1] = `${(10 - 0.25).toFixed(2)}-10.00`;
+            } else if (bins.length === 0) { // Handle case where there's no data or range is too small
+                bins.push('0.00-10.00');
+            }
+
+
+            // Hàm để lấy chỉ số khoảng điểm
+            function getBinIndex(score) {
+                if (score < 0 || score > 10) return -1;
+                // Tính toán chỉ số dựa trên bước nhảy 0.25
+                return Math.floor(score / 0.25);
+            }
+
+            // Function to create and append a chart for a given subject
+            function createSubjectChart(subjectName, scores, backgroundColor, borderColor) {
+                const distribution = new Array(bins.length).fill(0);
+                scores.forEach(score => {
+                    const index = getBinIndex(score);
+                    if (index !== -1 && index < bins.length) distribution[index]++;
+                });
+
+                const chartContainerDiv = document.createElement('div');
+                chartContainerDiv.className = 'chart-container';
+                chartContainerDiv.style.height = '350px'; // Set fixed height for the container
+                // Adjust min-width based on the number of bins to prevent bars from being too thin
+                chartContainerDiv.style.minWidth = `${bins.length * 20}px`; // Example: 20px per bar
+                resultDiv.appendChild(chartContainerDiv);
+
+                const canvas = document.createElement('canvas');
+                canvas.id = `chart-${subjectName.toLowerCase()}`;
+                chartContainerDiv.appendChild(canvas);
+
+                const ctx = canvas.getContext('2d');
+                const newChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: bins,
+                        datasets: [
+                            {
+                                label: `Số lượng học sinh`,
+                                data: distribution,
+                                backgroundColor: backgroundColor,
+                                borderColor: borderColor,
+                                borderWidth: 1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Số lượng học sinh'
+                                },
+                                ticks: {
+                                    stepSize: 1 // Đặt lại bước nhảy của trục Y là 1 vì đây là số lượng học sinh
+                                }
+                            },
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Khoảng điểm'
+                                },
+                                // Tùy chỉnh hiển thị nhãn trục X nếu có quá nhiều nhãn
+                                ticks: {
+                                    autoSkip: true,
+                                    maxRotation: 90,
+                                    minRotation: 90
+                                }
+                            }
+                        },
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: `Phân bổ điểm môn ${subjectName}`
+                            }
+                        }
+                    }
+                });
+                chartInstances.push(newChart); // Thêm thể hiện biểu đồ vào mảng
+            }
+
+            // Create charts for each subject
+            createSubjectChart('Văn', vanScores, 'rgba(75, 192, 192, 0.6)', 'rgba(75, 192, 192, 1)');
+            createSubjectChart('Toán', toanScores, 'rgba(255, 99, 132, 0.6)', 'rgba(255, 99, 132, 1)');
+            createSubjectChart('Anh', anhScores, 'rgba(54, 162, 235, 0.6)', 'rgba(54, 162, 235, 1)');
+        }
+
+        function displayAverageScoresByAge() {
+            const ageData = {};
+            const currentYear = new Date().getFullYear();
+
+            studentData.forEach(student => {
+                const dobParts = student.ngaysinh.split('/');
+                if (dobParts.length === 3) {
+                    const birthYear = parseInt(dobParts[2]);
+                    if (!isNaN(birthYear)) {
+                        const age = currentYear - birthYear;
+                        if (!ageData[age]) {
+                            ageData[age] = { totalVan: 0, totalToan: 0, totalAnh: 0, count: 0 };
+                        }
+
+                        const van = parseFloat(student.van);
+                        const toan = parseFloat(student.toan);
+                        const anh = parseFloat(student.anh);
+
+                        if (!isNaN(van)) ageData[age].totalVan += van;
+                        if (!isNaN(toan)) ageData[age].totalToan += toan;
+                        if (!isNaN(anh)) ageData[age].totalAnh += anh;
+
+                        if (!isNaN(van) || !isNaN(toan) || !isNaN(anh)) {
+                            ageData[age].count++;
+                        }
+                    }
+                }
+            });
+
+            let tableHtml = `<h3 class="text-xl font-semibold text-gray-700 mb-2">Điểm trung bình theo độ tuổi:</h3>`;
+            const sortedAges = Object.keys(ageData).sort((a, b) => parseInt(a) - parseInt(b));
+
+            if (sortedAges.length > 0) {
+                tableHtml += `
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr>
+                                <th class="py-2 px-4 bg-blue-100 rounded-tl-lg">Độ tuổi</th>
+                                <th class="py-2 px-4 bg-blue-100">Văn (TB)</th>
+                                <th class="py-2 px-4 bg-blue-100">Toán (TB)</th>
+                                <th class="py-2 px-4 bg-blue-100 rounded-tr-lg">Anh (TB)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                sortedAges.forEach(age => {
+                    const data = ageData[age];
+                    const avgVan = data.count > 0 ? (data.totalVan / data.count).toFixed(2) : 'N/A';
+                    const avgToan = data.count > 0 ? (data.totalToan / data.count).toFixed(2) : 'N/A';
+                    const avgAnh = data.count > 0 ? (data.totalAnh / data.count).toFixed(2) : 'N/A';
+
+                    tableHtml += `
+                        <tr>
+                            <td class="py-2 px-4 font-bold">${age}</td>
+                            <td class="py-2 px-4">${avgVan}</td>
+                            <td class="py-2 px-4">${avgToan}</td>
+                            <td class="py-2 px-4">${avgAnh}</td>
+                        </tr>
+                    `;
+                });
+                tableHtml += `
+                        </tbody>
+                    </table>
+                `;
+            } else {
+                tableHtml += `<p class="text-gray-600">Không có dữ liệu độ tuổi hợp lệ để hiển thị.</p>`;
+            }
+            document.getElementById('result').innerHTML = tableHtml;
+        }
+
+        function displaySpecializedSubjectStatistics() {
+            const resultDiv = document.getElementById('result');
+            let specializedSubjects = {};
+
+            studentData.forEach(student => {
+                const monChuyen = student.monchuyen;
+                const diemChuyen = parseFloat(student.diemchuyen);
+
+                if (monChuyen && monChuyen !== "" && !isNaN(diemChuyen) && diemChuyen > 0) {
+                    if (!specializedSubjects[monChuyen]) {
+                        specializedSubjects[monChuyen] = { totalScore: 0, count: 0 };
+                    }
+                    specializedSubjects[monChuyen].totalScore += diemChuyen;
+                    specializedSubjects[monChuyen].count++;
+                }
+            });
+
+            let tableHtml = `<h3 class="text-xl font-semibold text-gray-700 mb-2">Thống kê môn chuyên:</h3>`;
+            const sortedSubjects = Object.keys(specializedSubjects).sort();
+
+            if (sortedSubjects.length > 0) {
+                tableHtml += `
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr>
+                                <th class="py-2 px-4 bg-blue-100 rounded-tl-lg">Môn chuyên</th>
+                                <th class="py-2 px-4 bg-blue-100">Số lượng học sinh</th>
+                                <th class="py-2 px-4 bg-blue-100 rounded-tr-lg">Điểm trung bình</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                sortedSubjects.forEach(subject => {
+                    const data = specializedSubjects[subject];
+                    const avgScore = data.count > 0 ? (data.totalScore / data.count).toFixed(2) : 'N/A';
+                    tableHtml += `
+                        <tr>
+                            <td class="py-2 px-4 font-bold">${subject}</td>
+                            <td class="py-2 px-4">${data.count}</td>
+                            <td class="py-2 px-4">${avgScore}</td>
+                        </tr>
+                    `;
+                });
+                tableHtml += `
+                        </tbody>
+                    </table>
+                `;
+            } else {
+                tableHtml += `<p class="text-gray-600">Không có dữ liệu môn chuyên hợp lệ để hiển thị.</p>`;
+            }
+            document.getElementById('result').innerHTML = tableHtml;
+        }
+    </script>
+</body>
+</html>
